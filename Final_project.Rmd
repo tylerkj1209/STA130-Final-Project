@@ -1,0 +1,493 @@
+---
+title: "Properties of a Great Detective Story"
+author: "Tyler Kristjansen"
+subtitle: "The roles of crimes, clues, and reveals in the modern detective story"
+date: December 3, 2021
+output: 
+  beamer_presentation:
+    theme: "Pittsburgh"
+    colortheme: "orchid"
+    fonttheme: "structurebold"
+    slide_level: 2
+classoption: "aspectratio=169"
+fontsize: 11pt
+urlcolor: "Blue"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(knitr)
+# here is the data for this project
+detectives_full <- read_csv("detective_data.csv")
+```
+
+```{r}
+detectives_full <- detectives_full %>% rename(crimes_present = types_of_crimes_or_quasi_crimes_present_in_story, rating = would_you_recommend_this_story_to_a_friend)
+
+detectives_crimes <- detectives_full %>% 
+  select(crimes_present, rating) %>% 
+  mutate(crimes_present = str_split(crimes_present, ", "), rating = case_when(rating == "Yes" ~ 1, rating == "No" ~ 0)) %>% 
+  filter(!is.na(rating)) %>% 
+  mutate(crimes_present = lengths(crimes_present)) %>% 
+  group_by(crimes_present)
+
+summary_crimes <- detectives_crimes %>% 
+  summarise(stories = n(),
+            average_rating = mean(rating))
+
+
+```
+
+## Introduction and Goals
+Just like any other genre in fiction, detective stories harbour a vast array of characteristics, some of which are unique to the genre itself. However, among these features, there are variables which provide insight into what makes for an enjoyable detective story. In this analysis of what makes for a great detective story, focus was put onto just a few elements...
+ 
+- The number of crimes or quasi crimes committed throughout the stories.
+- Where in the story the crimes are revealed.
+- The essential and most salient clues found throughout the stories.
+ 
+Using these data, a number of insights can be made into what makes for a strong detective story, and what were the key characteristics of detectives stories from the 1800s to 1900s.
+
+---
+
+## Data on the Quantity of Crimes and Quasi Crimes
+When looking at data on detective stories, some stories involve just a single crime or quasi-crime, and some involve several. Do a greater variety of crimes enhance the quality of detective stories, and what would that mean for the genre?
+ 
+In order to analyze this, from the detective stories dataset the variety of crimes or quasi crimes committed in each stories was compiled as a new variable for each story. With this newly created variable, the goal will be to see if there is a significant difference in the average ratings for stories with a large amount of crimes compared to stories with relatively few crimes.
+
+---
+
+## Processing the Crime Data
+::: columns
+
+:::: column
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.height=1.4, fig.width=3, fig.align='right'}
+all_crimes_plot <- ggplot(data = detectives_crimes, aes(x = crimes_present)) +
+    geom_histogram(color = "#034078",
+                  fill = "#1282A2",
+                  bins = 7) +
+    labs(x = "Number of crimes present in story")
+
+detectives_crimes <- detectives_crimes %>% 
+  mutate(crime_binary = case_when(crimes_present > 3 ~ "> 3", crimes_present <= 3 ~ "< 4"))
+
+bin_crimes_plot <- ggplot(data = detectives_crimes, aes(x = crime_binary)) +
+  geom_bar(color = "#461220",
+                  fill = "#F0544F")
+all_crimes_plot
+bin_crimes_plot
+```
+::::
+
+:::: column
+
+In this data, it is important that stories with larger diversity of crimes were put into a category of their own as to not skew the data. Only a handful of observations appear for stories with 6+ different crimes. Thus, a split at 3 crimes was created to keep proportions more even. Still though, a majority of the stories had fewer than 4 crimes.
+  
+*Note: Information on the shape and center of the distribution of crime types is lost when modifying the data in this fashion*
+::::
+
+:::
+---
+
+## Story Rating and Number of Crimes
+::: columns
+
+:::: column
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.height=2, fig.width=3, fig.align='right'}
+#ggplot(data = summary_crimes, aes(x = crimes_present, y = average_rating)) +
+  #geom_bar(stat = "identity", color = "#461220",
+                  #fill = "#F0544F")
+summary_crime_binary <- detectives_crimes %>% 
+  select(crime_binary, rating) %>% 
+  group_by(crime_binary) %>% 
+  summarise(stories = n(),
+            average_rating = mean(rating))
+ggplot(data = summary_crime_binary, aes(x = crime_binary, y = average_rating)) +
+  geom_bar(stat = "identity", color = "#034078",
+                  fill = "#79A9D1") +
+  labs(x = "crimes present", y = "average rating")
+
+```
+::::
+
+:::: column
+In order to measure the enjoyability of the detective stories and relate that to the number of crimes, a variable "rating" was created. 
+"rating" ranges from 1 to 0. It is based on whether or not the annotator who read the story would recommend it to a friend. For stories containing greater than 3 crimes and stories with fewer than 4 crimes, their average ratings were found. Despite being very close to equal, stories with fewer than 4 crimes actually had slightly higher ratings than stories with 4 or more crimes present.
+::::
+
+:::
+
+---
+
+## Hypothesis Test
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+detectives_crime_binary <- detectives_crimes %>% 
+  select(crime_binary, rating) %>% 
+  group_by(crime_binary, rating) %>% 
+  tibble()
+
+t_stat = summary_crime_binary %>% 
+  summarise(difference = diff(average_rating))
+
+set.seed(414)
+
+repetitions <- 1000
+
+simulated_stats <- rep(NA, repetitions)
+
+sample_size = nrow(detectives_crime_binary)
+
+new_sim <- detectives_crime_binary %>% 
+  mutate(rating = sample(rating, 351, replace = FALSE))
+for (i in 1:repetitions){
+
+new_sim <- detectives_crime_binary %>% 
+  mutate(rating = sample(rating, sample_size, replace = FALSE))
+
+simulation_value <- new_sim %>% 
+    group_by(rating) %>% 
+    select(crime_binary, rating) %>% 
+    group_by(crime_binary) %>% 
+  summarise(average_rating = mean(rating)) %>% 
+  summarise(difference = diff(average_rating))
+
+  simulated_stats[i] <- as.numeric(simulation_value)
+}
+simulated_stats <- tibble(simulated_stats) %>% 
+  rename(simulation_value = simulated_stats)
+
+
+num_more_extreme <- simulated_stats %>% 
+  filter(simulation_value <= as.numeric(t_stat)) %>% 
+  summarise(n())
+
+p_value <- num_more_extreme / sample_size
+
+```
+In order to see if there is a difference in average rating between stories with 4 or more crimes in comparison to stories with 3 or less, a hypothesis test was run. Between the 2 categories, the null hypothesis states that there is no difference in average rating, and the alternative states that there is a difference. The difference found between the two categories from the provided sample data was only 0.0391. The hypothesis test resulted in a p-value of 0.863. The p-value is the probability that the observed difference of 0.0391 was caused by random chance. Since the p-value is so high, we fail to reject the null hypothesis and must conclude that there is no difference ratings between stories with more than 3 crimes in comparison to stories with fewer than 4 crimes.
+
+---
+
+## Implications
+
+Due to the failure to reject the null hypothesis and the small observed difference between ratings, it is very likely that the variety of crimes committed in the stories does not effect their overall enjoyability. However, this does not take into account stories where only one type of crime is committed over and over. What this data says about great detective stories is that in order for those stories to be great, the amount of variety in violence and wrongdoing is not a key factor. 
+
+---
+
+## When to Reveal
+When looking into what makes modern detective stories, a key characteristic of the plot is when the cause of the crime is revealed. In order to get a reference point for how long it takes each story to reveal their crime, a new variable was created to find the proportion through the story where the reveal starts. Using this new variable, a key piece of information can be found that describes an important pattern in detective stories from this time period; when in the story do most authors write their reveal?
+
+---
+
+## Distribution of Reveal Times
+::: columns
+
+:::: column
+```{r, fig.height = 2, fig.width = 2.5}
+detectives_full <- detectives_full %>% rename(text_after_reveal = after_reveal_words)
+
+detectives_reveal_prop <- detectives_full %>% 
+  mutate(reveal_prop = 100 * (text_words - text_after_reveal) / text_words) %>% 
+  filter(!is.na(reveal_prop))
+
+ggplot(data = detectives_reveal_prop, aes(x = reveal_prop)) +
+  geom_histogram(color = "#1282A2", fill = "#79A9D1", alpha = (1), lwd = 0.4, bins = 15) +
+  labs(x = "Percent of Story Until Reveal", y = "Stories")
+```
+:::: 
+
+:::: column
+In this histogram, stories are distributed across the graph relative to the point their authors wrote their reveals. A significant number of the stories fall within the 70% - 90% range, indicating that it is very common among these detective stories to reveal somewhat late. Towards the lower end of this graph, a few outliers can be seen; stories that reveal the cause of the crimes very early. These stories make up only a tiny fraction of the stories in the data and skew the graph to the right.
+```{r}
+summaries <- detectives_reveal_prop %>% 
+  summarise(minimum = quantile(reveal_prop, 0),
+            Q1 = quantile(reveal_prop, 0.25),
+            Q2 = quantile(reveal_prop, 0.5),
+            Q3 = quantile(reveal_prop, 0.75),
+            maximum = quantile(reveal_prop, 1))
+#summaries
+```
+::::
+
+:::
+---
+
+## Data Table for Median Reveal Time
+
+| Min   | 25th % | 50th % | 75th % | Max    |
+|-------|--------|--------|--------|--------|
+| 4.56% | 69.91% | 78.59% | 86.12% | 97.99% |
+
+In this table, the minimum reveal time, maximum reveal time, and percentiles of reveal time for all the data are shown. The 50th percentile (the median) lies at 78.59%. From the information in the table and the histogram, a number of insights can be made on the data...
+
+- 25% of the stories had reveals earlier than 69.91% of the way through.
+- 25% of the stories revealed their crimes later than 86.12%
+- No story revealed the causes for its crimes earlier than 4.56% into the story or after 97.99% of the way into the story.
+
+---
+
+```{r}
+set.seed(414)
+
+repetitions <- 2000
+
+sample_dist_reveal <- rep(NA, repetitions)
+
+t_stat_revealtime <- detectives_reveal_prop %>% 
+  filter(!is.na(reveal_prop)) %>% 
+  summarise(med_reveal = quantile(reveal_prop, 0.5))
+
+#t_stat_revealtime
+
+sample_size <- nrow(detectives_reveal_prop)
+
+for (i in 1:repetitions){
+  reveal_sample <- sample_n(detectives_reveal_prop, size = sample_size, replace = TRUE, prob = NULL)
+  sample_tibble <- tibble(reveal_sample)
+  
+  med_sample <- sample_tibble %>% 
+  summarise(median = median(reveal_prop, 0.5))
+  
+  med_sample <- as.numeric(med_sample)
+  sample_dist_reveal[i] <- med_sample
+}
+
+bootstrap_table <- tibble(sample_dist_reveal)
+
+bootstrap_summary <- bootstrap_table %>% 
+  select(sample_dist_reveal) %>% 
+  summarise(sample_number = sample_size,
+            mean = mean(sample_dist_reveal),
+            median = median(sample_dist_reveal),
+            "2.5%" = quantile(sample_dist_reveal, 0.025),
+            "97.5%" = quantile(sample_dist_reveal, 0.975))
+          
+#bootstrap_summary
+```
+
+## The True Median Reveal Time
+
+From the data, a 95% confidence interval for true median reveal time was found centered at 78.565% that ranged from 76.954% to 80.388%. With 95% confidence, it can be said that the true median value for the reveal percentage for all detective stories is within this interval.
+  
+*Note: It is important to take into account what population is represented. Given that the data was found from only stories that were readily available online, this confidence interval doesn't describe data outside of this subset of detective stories. It would be safer to assume that this confidence interval only applies to non-obscure pieces of detective fiction.*
+ 
+---
+
+## Implications
+
+From the confidence interval and visualizations, the data shows that it is very common for authors to reveal the causes of their stories' crimes somewhat late. There are also a select few stories that almost immediately reveal the cause for the crime, and a few stories where the crime is revealed at nearly the end of the story. When considering what sort of story structure makes for a great detective story, stories with a reveal between 76.954% and 80.388% would have a very similar structure to what would be considered a standard detective story.
+
+---
+
+## Clue Types in Detective Stories
+When considering great detective fiction, an important element is how the author will introduce clues throughout the story, and whether or not they serve to enhance the story. However, does clue type really effect how enjoyable a story is as a piece of detective fiction? In order to investigate this, a variable based on annotators satisfaction with each story as a piece of detective fiction was used and called story satisfaction. This variable is scored from 1 to 5.
+
+---
+## Analysis of Clue Type for Most Essential and Salient Clues
+::: columns
+
+:::: column
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.height=1.4, fig.width=3, fig.align='right'}
+detectives_clue <- detectives_full %>% rename(clue_type_essential = of_what_type_is_the_essential_clue_if_present, clue_type_salient = of_what_type_is_the_most_salient_clue_if_clues_are_present, story_satisfaction = how_satisfying_is_this_story_as_a_piece_of_detective_fiction)
+
+##removed the NA values, potentially skewing data.
+detectives_clue <- detectives_clue %>% 
+  filter(!is.na(clue_type_essential), !is.na(clue_type_salient))
+
+
+plot_essential <- ggplot(data = detectives_clue, aes(x = clue_type_essential)) +
+  geom_bar(col = "#461220", fill = "#F0544F") +
+  labs(x = "Type of Essential Clue")
+
+
+plot_salient <- ggplot(data = detectives_clue, aes(x = clue_type_salient)) +
+  geom_bar(col = "#461220", fill = "#F0544F") + 
+  labs(x = "Type of Salient Clue")
+
+#ggplot(data = detectives_clue, aes(x = story_satisfaction, y = clue_type_essential)) +
+  #geom_boxplot()
+
+
+
+
+plot_essential
+plot_salient
+```
+::::
+
+:::: column
+
+
+In the visualizations of clue types for essential and most salient clues, more stories introduce their most salient clue as a testimonial clue, yet more than half had their essential clues in the form of a physical clue. Thus, a pattern seems to emerge where many stories show the reader a testimonial clue that is very noticeable, and leaving the most important clue as a physical one. There are a large number of reasons why this might be. Testimonial clues might be introduced to the reader in a much more upfront way, they might be used by authors to redirect the reader away from the physical clue, and they could be written in for completely different reasons.
+
+::::
+
+:::
+---
+
+## Comparing Satisfaction Scores
+::: columns
+
+:::: column
+
+```{r}
+essential_phys_mean <- detectives_clue %>% 
+  select(clue_type_essential, story_satisfaction) %>% 
+  filter(clue_type_essential == "Physical clue") %>% 
+  summarise(mean_val = mean(story_satisfaction))
+
+essential_test_mean <- detectives_clue %>% 
+  select(clue_type_essential, story_satisfaction) %>% 
+  filter(clue_type_essential == "Testimonial clue") %>% 
+  summarise(mean_val = mean(story_satisfaction))
+
+salient_phys_mean <- detectives_clue %>% 
+  select(clue_type_salient, story_satisfaction) %>% 
+  filter(clue_type_salient == "Physical clue") %>% 
+  summarise(mean_val = mean(story_satisfaction))
+
+salient_test_mean <- detectives_clue %>% 
+  select(clue_type_salient, story_satisfaction) %>% 
+  filter(clue_type_salient == "Testimonial clue") %>% 
+  summarise(mean_val = mean(story_satisfaction))
+
+
+
+test_stat <- as.numeric(essential_phys_mean - essential_test_mean)
+
+test_stat2 <- as.numeric(salient_phys_mean - salient_test_mean)
+#################################### Begin essential simulation under the null ####################################
+set.seed(414)
+
+repetitions <- 1000
+
+simulated_stats <- rep(NA, repetitions)
+
+sample_size = nrow(detectives_clue)
+
+for (i in 1:repetitions){
+
+new_sim <- detectives_clue %>% 
+  mutate(story_satisfaction = sample(story_satisfaction, sample_size, replace = FALSE))
+
+e_phys_mean <- new_sim %>% 
+  select(clue_type_essential, story_satisfaction) %>% 
+  filter(clue_type_essential == "Physical clue") %>% 
+  summarise(mean_val = mean(story_satisfaction))
+
+e_test_mean <- new_sim %>% 
+  select(clue_type_essential, story_satisfaction) %>% 
+  filter(clue_type_essential == "Testimonial clue") %>% 
+  summarise(mean_val = mean(story_satisfaction))
+
+simulation_value <- as.numeric(e_phys_mean - e_test_mean)
+
+  simulated_stats[i] <- as.numeric(simulation_value)
+}
+simulated_stats <- tibble(simulated_stats) %>% 
+  rename(simulation_value = simulated_stats)
+
+num_more_extreme <- simulated_stats %>% 
+  filter(simulation_value >= as.numeric(test_stat)) %>% 
+  summarise(n())
+
+
+
+p_value_essential <- num_more_extreme / sample_size
+
+
+simulated_stats <- rep(NA, repetitions)
+
+sample_size = nrow(detectives_clue)
+
+for (i in 1:repetitions){
+
+new_sim <- detectives_clue %>% 
+  mutate(story_satisfaction = sample(story_satisfaction, sample_size, replace = FALSE))
+
+e_phys_mean <- new_sim %>% 
+  select(clue_type_salient, story_satisfaction) %>% 
+  filter(clue_type_salient == "Physical clue") %>% 
+  summarise(mean_val = mean(story_satisfaction))
+
+e_test_mean <- new_sim %>% 
+  select(clue_type_salient, story_satisfaction) %>% 
+  filter(clue_type_salient == "Testimonial clue") %>% 
+  summarise(mean_val = mean(story_satisfaction))
+
+simulation_value <- as.numeric(e_phys_mean - e_test_mean)
+
+  simulated_stats[i] <- as.numeric(simulation_value)
+}
+
+simulated_stats <- tibble(simulated_stats) %>% 
+  rename(simulation_value = simulated_stats)
+
+num_more_extreme <- simulated_stats %>% 
+  filter(simulation_value >= as.numeric(test_stat2)) %>% 
+  summarise(n())
+
+p_value_salient <- num_more_extreme / sample_size
+
+
+#p_value_essential
+#p_value_salient
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.height=1.3, fig.width=3}
+clue_essential <- detectives_clue %>% 
+  select(clue_type_essential, story_satisfaction)
+
+clue_salient <- detectives_clue %>% 
+  select(clue_type_salient, story_satisfaction)
+
+ggplot(data = clue_essential, aes(x = story_satisfaction, y = clue_type_essential)) +
+  geom_boxplot(col = "#461220", fill = "#F0544F") +
+  labs(y = "clue type", x = "story satisfaction") +
+  ggtitle("Essential Clue")
+
+ggplot(data = clue_salient, aes(x = story_satisfaction, y = clue_type_salient)) +
+  geom_boxplot(color = "#1282A2", fill = "#79A9D1") +
+  labs(y = "clue type", x = "story satisfaction") +
+  ggtitle("Most Salient Clue")
+```
+
+::::
+
+:::: column
+
+In the boxplots to the left, for both salient clues and essential clues, stories with physical clues have overall more distribution into higher ratings, with only a single story achieving a 5/5 while having a testimonial clue. However, due to there being only 5 seperate choices for annotators to rate the stories, it is difficult to visualize how strong this difference is.
+  
+*Note: Stories with non-physical and non-testimonial clues have been removed. They made up a minority of stories but some information is lost in removing them.*
+
+
+::::
+
+:::
+
+---
+
+## Hypothesis Testing
+
+From the sample, the difference in average satisfaction score for essential clue type was 0.288, and the difference was 0.193 for average satisfaction score for most salient clues. Given the noticeable difference between the distributions of story satisfaction scores between stories with testimonial clues in comparison to stories with physical clues, 2 hypothesis tests were run to find out if the difference in story satisfaction between physical clues and testimonial clues was significant for both essential and salient clue types. For these hypothesis tests, the null hypotheses are that these observed differences are just caused by chance and that in the population, there is no difference in ratings between stories with physical clues and testimonial clues. The alternative hypotheses are that there is in fact a difference between satisfaction scores between stories with physical clues in comparison to stories with testimonial clues.
+
+---
+
+## Results and Implications
+
+After running the 2 hypothesis tests, regarding essential clues, a p-value of just 0.0185 was found, indicating that the observed difference in story satisfaction between physical and testimonial clue types is very unlikely to be caused by random chance. There is strong evidence to reject the null hypothesis, and conclude that in the population, having a physical essential clue correlates with higher story satisfaction. For the most salient clues however, a p-value of 0.114 was found, indicating that there was a much higher probability for the observed difference in satisfactions to be caused by chance. Thus, there is weak evidence to reject the null hypothesis. What these data indicate about clue type is that when writing a great detective story, having a physical clue that is essential to revealing the crime correlates with a slightly higher story satisfaction. However, the type of most salient clue in a story does not correlate nearly as much to story satisfaction.
+
+---
+
+## Conclusions
+
+From these analyses, key insights can be made into what makes for a great detective story...
+
+- The variety of crimes does not correlate with whether a story is great or not.
+- Stylistically it is extremely common for authors to reveal the causes for crimes between 76.9% and 80.4% of the way through their stories.
+- Stories with physical clues that are essential to discovering the cause of the crime correlate with higher detective story quality.
+- In detective stories, the type of salient clue does not strongly correlate with better story quality.
+  
+---
+---
